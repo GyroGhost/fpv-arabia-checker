@@ -1,0 +1,3 @@
+Bundled copy of orangebox (https://github.com/atomgomba/orangebox), commit 1d5a7be.
+Author: Karoly Kiripolszky. License: GPL-3.0 (same as this project).
+Bundled because the PyPI release 0.5.0 fails to install with newer pip (invalid script entry point).
