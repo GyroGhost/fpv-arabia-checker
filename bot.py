@@ -146,8 +146,20 @@ async def send_noise(msg: discord.Message, data: bytes, cfg):
         embed.add_field(name=name, value=text, inline=False)
     embed.set_image(url="attachment://noise.png")
     embed.set_footer(text="البرتقالي قبل الـFilters • الأزرق بعدها")
-    await msg.reply(embed=embed, file=discord.File(io.BytesIO(res.png), filename="noise.png"),
-                    mention_author=False)
+    embeds = [embed]
+    files = [discord.File(io.BytesIO(res.png), filename="noise.png")]
+    if res.heat_png:
+        heat = discord.Embed(
+            title="🔥 الـNoise مقابل الـThrottle",
+            description=(f"من كل الطلعات اللي في الملف ({res.flights_used}).\n"
+                         "الأسود هدوء، والأحمر Noise، والأبيض أقوى Noise.\n"
+                         "الخط الأخضر حد الـGyro Filter، وأي Noise على يمينه ينقص بقوة.\n"
+                         "إذا شفت خط أبيض مايل يطلع مع الـThrottle، هذا Noise الـMotors."),
+            color=0xE00000)
+        heat.set_image(url="attachment://heat.png")
+        embeds.append(heat)
+        files.append(discord.File(io.BytesIO(res.heat_png), filename="heat.png"))
+    await msg.reply(embeds=embeds, files=files, mention_author=False)
     print(f"[ok] noise sent, peaks={[(a, round(h)) for a, h, _ in res.peaks]}")
 
 
