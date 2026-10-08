@@ -25,6 +25,7 @@ class Config:
     features_on: set = field(default_factory=set)
     features_off: set = field(default_factory=set)
     aux: list = field(default_factory=list)
+    source: str = "cli"  # cli أو blackbox
 
     def get(self, key: str):
         """يدور على الإعداد في master ثم البروفايل النشط ثم بروفايل الريتس."""
@@ -108,4 +109,59 @@ def parse(text: str) -> Config:
             else:
                 cfg.master[key] = value
 
+    return cfg
+
+
+# ---------------- Blackbox (.BBL / .BFL) ----------------
+# ملفات البلاك بوكس فيها كل الإعدادات في أولها كسطور تبدأ بـ "H "
+# بعض القيم أرقام، فنحولها لأسمائها مثل الـCLI.
+MOTOR_PROTOCOLS = ["PWM", "ONESHOT125", "ONESHOT42", "MULTISHOT", "BRUSHED",
+                   "DSHOT150", "DSHOT300", "DSHOT600", "PROSHOT1000", "DISABLED"]
+RATES_TYPES = ["BETAFLIGHT", "RACEFLIGHT", "KISS", "ACTUAL", "QUICK"]
+FEATURE_GPS = 1 << 7
+BBL_FW_RE = re.compile(r"(Betaflight|INAV|Emuflight)\s+(\d+\.\d+\.\d+)\S*.*?\s(\S+)$", re.IGNORECASE)
+
+
+def _enum(values, raw):
+    try:
+        return values[int(raw)]
+    except (ValueError, IndexError):
+        return raw
+
+
+def parse_blackbox(data: bytes) -> Config:
+    cfg = Config(source="blackbox")
+    start = data.find(b"H Product:")
+    if start < 0:
+        return cfg
+    headers = {}
+    for raw in data[start:start + 200_000].split(b"\n"):
+        if not raw.startswith(b"H "):
+            break
+        key, _, value = raw[2:].decode("latin1").partition(":")
+        headers[key.strip()] = value.strip()
+
+    m = BBL_FW_RE.search(headers.get("Firmware revision", ""))
+    if m:
+        cfg.firmware, cfg.version, cfg.mcu = m.group(1), m.group(2), m.group(3)
+    board = headers.get("Board information", "").split()
+    cfg.board = board[-1] if board else None
+    cfg.craft_name = headers.get("Craft name") or None
+
+    m = cfg.master
+    if "motor_pwm_protocol" in headers:
+        m["motor_pwm_protocol"] = _enum(MOTOR_PROTOCOLS, headers["motor_pwm_protocol"])
+    if "dshot_bidir" in headers:
+        m["dshot_bidir"] = "ON" if headers["dshot_bidir"] == "1" else "OFF"
+    if "rates_type" in headers:
+        m["rates_type"] = _enum(RATES_TYPES, headers["rates_type"])
+    if "motor_poles" in headers:
+        m["motor_poles"] = headers["motor_poles"]
+    if "vbatcellvoltage" in headers:
+        m["vbat_min_cell_voltage"] = headers["vbatcellvoltage"].split(",")[0]
+    try:
+        if int(headers.get("features", "0")) & FEATURE_GPS:
+            cfg.features_on.add("GPS")
+    except ValueError:
+        pass
     return cfg

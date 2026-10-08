@@ -28,6 +28,8 @@ def rule_version(cfg: Config):
 
 
 def rule_arm_switch(cfg: Config):
+    if cfg.source == "blackbox":
+        return None  # ملف البلاك بوكس ما فيه الـModes
     # aux <index> <modeId> <channel> <start> <end> ...  — modeId 0 = ARM
     for row in cfg.aux:
         if len(row) >= 5 and row[1] == 0 and row[3] != row[4]:

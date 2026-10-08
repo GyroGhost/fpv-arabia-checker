@@ -4,7 +4,7 @@ import os
 import discord
 from dotenv import load_dotenv
 
-from cli_parser import parse
+from cli_parser import parse, parse_blackbox
 from report import BAD, OK, TIP, WARN, sections, summary_pairs, worst_level
 from rules import analyze
 
@@ -12,6 +12,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHECK_CHANNEL_ID", "0"))  # 0 = كل القنوات
 MAX_BYTES = 200_000
+MAX_BBL_BYTES = 25_000_000
 COLORS = {OK: 0x2ECC71, TIP: 0x3498DB, WARN: 0xF1C40F, BAD: 0xE74C3C}
 
 intents = discord.Intents.default()
@@ -51,8 +52,7 @@ HOW_TO = (
 def wrong_file_message(filename: str) -> str:
     name = filename.lower()
     if name.endswith((".bbl", ".bfl")):
-        head = ("هذا ملف Blackbox 📈 فيه تسجيل الطيران، وأنا أقرأ ملف الإعدادات بس.\n"
-                "لتحليل الـBlackbox استخدم الـBlackbox Explorer.")
+        head = "ملف الـBlackbox كبير بزيادة 📈 ارفع ملف أصغر أو استخدم ملف الإعدادات."
     elif name.endswith((".png", ".jpg", ".jpeg", ".webp")):
         head = "هذي صورة 🖼️ ما أقدر أقرأ الإعدادات منها، أحتاج الملف النصي."
     elif name.endswith((".txt", ".log", ".cli")):
@@ -71,7 +71,10 @@ def build_embed(cfg, findings) -> discord.Embed:
         embed.add_field(name=label, value=f"`{value}`", inline=True)
     for name, text in sections(findings):
         embed.add_field(name=name, value=text, inline=False)
-    embed.set_footer(text="FPV Arabia • فحص تلقائي، راجع أي شي قبل لا تطير")
+    footer = "FPV Arabia • فحص تلقائي، راجع أي شي قبل لا تطير"
+    if cfg.source == "blackbox":
+        footer = "مقروء من ملف Blackbox، لفحص أدق ارفع diff all • " + footer
+    embed.set_footer(text=footer)
     return embed
 
 
@@ -91,6 +94,16 @@ async def on_message(msg: discord.Message):
         print("[skip] not the check channel")
         return
 
+    bbl = next((a for a in msg.attachments
+                if a.filename.lower().endswith((".bbl", ".bfl")) and a.size <= MAX_BBL_BYTES), None)
+    if bbl:
+        cfg = parse_blackbox(await bbl.read())
+        if not cfg.looks_valid():
+            await msg.reply(f"ما لقيت إعدادات في ملف الـBlackbox هذا 🤔\n\n{HOW_TO}", mention_author=False)
+            return
+        await send_report(msg, cfg)
+        return
+
     text = await extract_text(msg)
     if not text:
         print("[skip] no CLI text found")
@@ -103,6 +116,10 @@ async def on_message(msg: discord.Message):
         await msg.reply(f"ما قدرت أقرأ الإعدادات من هذا الملف 🤔\n\n{HOW_TO}", mention_author=False)
         return
 
+    await send_report(msg, cfg)
+
+
+async def send_report(msg: discord.Message, cfg):
     try:
         await msg.reply(embed=build_embed(cfg, analyze(cfg)), mention_author=False)
         print("[ok] report sent")
