@@ -13,6 +13,7 @@ def summary_pairs(cfg: Config) -> list[tuple[str, str]]:
         ("الـBoard", cfg.board or cfg.mcu),
         ("الـProtocol", cfg.get("motor_pwm_protocol")),
         ("نوع الـRates", cfg.get("rates_type")),
+        ("عدد الطلعات", str(cfg.log_count) if cfg.log_count else None),
         ("إعدادات متغيرة", str(cfg.changed_count) if cfg.source == "cli" else None),
     ]
     return [(k, v) for k, v in rows if v]

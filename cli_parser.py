@@ -26,6 +26,7 @@ class Config:
     features_off: set = field(default_factory=set)
     aux: list = field(default_factory=list)
     source: str = "cli"  # cli أو blackbox
+    log_count: int = 0  # عدد الطلعات في ملف البلاك بوكس
 
     def get(self, key: str):
         """يدور على الإعداد في master ثم البروفايل النشط ثم بروفايل الريتس."""
@@ -131,7 +132,9 @@ def _enum(values, raw):
 
 def parse_blackbox(data: bytes) -> Config:
     cfg = Config(source="blackbox")
-    start = data.find(b"H Product:")
+    cfg.log_count = data.count(b"H Product:")
+    # نقرأ إعدادات آخر طلعة، لأنها الأحدث
+    start = data.rfind(b"H Product:")
     if start < 0:
         return cfg
     headers = {}
