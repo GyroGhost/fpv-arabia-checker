@@ -64,10 +64,12 @@ def render(data: bytes, flight_index: int):
                               encoding="utf-8", errors="replace")
     except subprocess.TimeoutExpired:
         return tmp, [], f"الأداة طوّلت أكثر من {TIMEOUT_S} ثانية"
-    pngs = sorted(out.rglob("*.png"))
-    if proc.returncode != 0 and not pngs:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
-        return tmp, [], "الأداة طلعت خطأ: " + " | ".join(tail)
+    pngs = sorted(out.rglob("*.png")) + sorted(tmp.glob("*.png"))
+    if not pngs:
+        log = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip().splitlines()
+        tail = " | ".join(log[-8:]) if log else "(no output)"
+        files = ", ".join(p.name for p in tmp.rglob("*") if p.is_file())
+        return tmp, [], f"exit={proc.returncode} files=[{files}] output: {tail}"
 
     picked, total = [], 0
     for key, title, desc in PLOTS:
