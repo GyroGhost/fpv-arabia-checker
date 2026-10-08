@@ -13,6 +13,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
 import numpy as np  # noqa: E402
 from orangebox import Parser  # noqa: E402
 
@@ -28,6 +29,10 @@ TEXT_2 = "#c3c2b7"
 GRID = "#3a3a38"
 RAW = "#d95926"       # قبل الفلترة
 FILTERED = "#3987e5"  # بعد الفلترة
+FILTER_LINE = "#1baf7a"
+# نفس ألوان الـBlackbox Explorer: أسود ← أحمر ← أبيض
+HEAT = LinearSegmentedColormap.from_list(
+    "bbx", [(0, "#000000"), (0.35, "#5a0000"), (0.65, "#e00000"), (0.85, "#ff6060"), (1, "#ffffff")])
 
 
 @dataclass
@@ -39,6 +44,8 @@ class NoiseResult:
     peaks: list = field(default_factory=list)       # [(axis, hz, strength_db)]
     reduction_db: float | None = None                 # قد إيش الفلاتر شالت من الـNoise
     png: bytes = b""
+    heat_png: bytes = b""
+    flights_used: int = 0
 
 
 def _welch(x: np.ndarray, fs: float, nper: int = 512):
@@ -55,8 +62,11 @@ def _welch(x: np.ndarray, fs: float, nper: int = 512):
 
 
 def _load_longest(path: str):
+    """يرجع (أطول طلعة، كل الطلعات، الـheaders)."""
     parser = Parser.load(path)
     best = None
+    logs = []
+    headers = {}
     for i in range(1, parser.reader.log_count + 1):
         try:
             parser.set_log_index(i)
@@ -66,9 +76,25 @@ def _load_longest(path: str):
             continue
         if len(rows) < 100 or "time" not in names:
             continue
+        headers = dict(parser.headers)
+        logs.append((names, rows))
         if best is None or len(rows) > len(best[2]):
             best = (i, names, rows)
-    return best
+    return best, logs, headers
+
+
+def _to_array(names, rows, wanted):
+    idx = [names.index(n) for n in wanted if n in names]
+    clean = []
+    for r in rows:
+        try:
+            clean.append([float(r[j]) for j in idx])
+        except (ValueError, TypeError, IndexError):
+            continue
+    if not clean:
+        return None, []
+    arr = np.array(clean, dtype=float)
+    return arr[np.argsort(arr[:, 0])], [names[j] for j in idx]
 
 
 def _db(p):
@@ -80,7 +106,7 @@ def analyze_noise(data: bytes) -> NoiseResult | None:
         tmp.write(data)
         path = tmp.name
     try:
-        best = _load_longest(path)
+        best, logs, headers = _load_longest(path)
     finally:
         os.unlink(path)
     if not best:
@@ -88,16 +114,7 @@ def analyze_noise(data: bytes) -> NoiseResult | None:
 
     log_index, names, rows = best
     wanted = ["time"] + [f"gyroADC[{i}]" for i in range(3)] + [f"gyroUnfilt[{i}]" for i in range(3)]
-    idx = [names.index(n) for n in wanted if n in names]
-    clean = []
-    for r in rows:
-        try:
-            clean.append([float(r[j]) for j in idx])
-        except (ValueError, TypeError, IndexError):
-            continue
-    names = [names[j] for j in idx]
-    arr = np.array(clean, dtype=float)
-    arr = arr[np.argsort(arr[:, 0])]
+    arr, names = _to_array(names, rows, wanted)
     t = arr[:, names.index("time")] / 1e6
     seconds = float(t[-1] - t[0])
     if seconds < MIN_SECONDS:
@@ -164,7 +181,118 @@ def analyze_noise(data: bytes) -> NoiseResult | None:
     fig.savefig(buf, format="png", dpi=110, facecolor=SURFACE)
     plt.close(fig)
     res.png = buf.getvalue()
+
+    try:
+        _heatmap(res, logs, headers)
+    except Exception as e:  # الرسمة الثانية اختيارية
+        print(f"[warn] heatmap {type(e).__name__}: {e}")
     return res
+
+
+def _filter_lines(ax, headers, fmax):
+    """خطوط الـGyro Filters مثل الـBlackbox Explorer."""
+    def ints(key):
+        v = headers.get(key, "")
+        try:
+            if isinstance(v, (list, tuple)):
+                return [int(x) for x in v]
+            return [int(x) for x in str(v).split(",")]
+        except ValueError:
+            return []
+    thr = np.linspace(0, 100, 50)
+    dyn = ints("gyro_lpf1_dyn_hz")
+    if len(dyn) == 2 and dyn[0] > 0:
+        expo = (ints("gyro_lpf1_dyn_expo") or [0])[0] / 10
+        x = thr / 100
+        curve = x * (1 - expo) + x ** 3 * expo  # تقريب لمنحنى الـexpo
+        hz = dyn[0] + (dyn[1] - dyn[0]) * curve
+        ax.plot(hz, thr, color=FILTER_LINE, lw=1.4)
+        ax.text(dyn[0] + 4, 4, f"LPF1 dyn {dyn[0]}-{dyn[1]}Hz", color=FILTER_LINE, fontsize=8)
+    else:
+        st = (ints("gyro_lpf1_static_hz") or [0])[0]
+        if 0 < st < fmax:
+            ax.axvline(st, color=FILTER_LINE, lw=1.4)
+            ax.text(st + 4, 96, f"LPF1 {st}Hz", color=FILTER_LINE, fontsize=8, va="top")
+    st2 = (ints("gyro_lpf2_static_hz") or [0])[0]
+    if 0 < st2 < fmax:
+        ax.axvline(st2, color=FILTER_LINE, lw=1.4)
+        ax.text(st2 - 4, 96, f"LPF2 {st2}Hz", color=FILTER_LINE, fontsize=8, va="top", ha="right")
+
+
+def _heatmap(res: NoiseResult, logs, headers, nfft: int = 128, step: int = 16):
+    """الـSpectrum مقابل الـThrottle من كل الطلعات اللي في الملف."""
+    nbins = 100
+    nf = nfft // 2 + 1
+    grids = {"raw": np.zeros((nbins, nf)), "flt": np.zeros((nbins, nf))}
+    counts = np.zeros(nbins)
+    win = np.hanning(nfft)
+    fs_all = []
+
+    for names, rows in logs:
+        wanted = (["time", "rcCommand[3]"] + [f"gyroADC[{i}]" for i in range(2)]
+                  + [f"gyroUnfilt[{i}]" for i in range(2)])
+        arr, cols = _to_array(names, rows, wanted)
+        if arr is None or "rcCommand[3]" not in cols or len(arr) < nfft * 2:
+            continue
+        c = {n: arr[:, k] for k, n in enumerate(cols)}
+        fs_all.append(1e6 / float(np.median(np.diff(c["time"]))))
+        thr = np.clip((c["rcCommand[3]"] - 1000) / 10, 0, 99.9)
+        flt = [c[f"gyroADC[{i}]"] for i in range(2)]
+        raw = [c[f"gyroUnfilt[{i}]"] for i in range(2)] if "gyroUnfilt[0]" in c else flt
+        res.flights_used += 1
+        for a in range(0, len(arr) - nfft, step):
+            b = int(thr[a:a + nfft].mean() / 100 * nbins)
+            counts[b] += 1
+            for key, sig in (("raw", raw), ("flt", flt)):
+                for x in sig:
+                    seg = x[a:a + nfft]
+                    grids[key][b] += np.abs(np.fft.rfft((seg - seg.mean()) * win)) ** 2
+
+    if not fs_all or counts.sum() < 10:
+        return
+    fs = float(np.median(fs_all))
+    freqs = np.fft.rfftfreq(nfft, 1 / fs)
+    # نعبي الـThrottle اللي ما طرت عليه بشكل خفيف من الجيران عشان الرسمة تكون ناعمة
+    kernel = np.array([1, 2, 3, 4, 3, 2, 1], float)
+    cnt = np.convolve(counts, kernel, mode="same")
+    imgs = {}
+    for key, g in grids.items():
+        sm = np.apply_along_axis(lambda col_: np.convolve(col_, kernel, mode="same"), 0, g)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            avg = np.where(cnt[:, None] > 0, sm / cnt[:, None], np.nan)
+        imgs[key] = 10 * np.log10(np.maximum(avg, 1e-9))
+    # المقياس من الترددات فوق 30Hz، عشان حركة الستك ما تغطي على الـNoise
+    hi = imgs["raw"][:, freqs > 30]
+    ref = hi[np.isfinite(hi)]
+    vmax = np.percentile(ref, 99.7)
+    vmin = vmax - 30
+
+    has_raw = res.has_unfiltered
+    panels = [("raw", "Before filters"), ("flt", "After filters")] if has_raw else [("flt", "Gyro")]
+    fig, axs = plt.subplots(1, len(panels), figsize=(5.2 * len(panels), 5.6),
+                            facecolor=SURFACE, squeeze=False)
+    for ax, (key, title) in zip(axs[0], panels):
+        ax.set_facecolor("#000000")
+        ax.imshow(imgs[key], origin="lower", aspect="auto", cmap=HEAT, vmin=vmin, vmax=vmax,
+                  extent=(0, fs / 2, 0, 100), interpolation="bilinear")
+        _filter_lines(ax, headers, fs / 2)
+        ax.set_xlim(0, fs / 2)
+        ax.set_ylim(0, 100)
+        ax.set_title(title, color=TEXT, fontsize=11, loc="left")
+        ax.set_xlabel("Frequency (Hz)", color=TEXT_2)
+        ax.tick_params(colors=TEXT_2)
+        ax.grid(True, color="#ffffff", alpha=0.12, lw=0.6)
+        for s_ in ax.spines.values():
+            s_.set_visible(False)
+    axs[0][0].set_ylabel("Throttle (%)", color=TEXT_2)
+    fig.suptitle(f"Noise vs Throttle  ·  Roll + Pitch  ·  {res.flights_used} flights",
+                 color=TEXT, fontsize=13, fontweight="bold", x=0.05, y=0.98, ha="left")
+    fig.text(0.97, 0.98, "FPV Arabia", color=TEXT_2, ha="right", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110, facecolor=SURFACE)
+    plt.close(fig)
+    res.heat_png = buf.getvalue()
 
 
 def explain(res: NoiseResult, rpm_filter_on: bool | None) -> list[tuple[str, str]]:
