@@ -9,10 +9,10 @@ SECTIONS = [(BAD, "مشاكل لازم تنحل"), (WARN, "تنبيهات"), (TI
 def summary_pairs(cfg: Config) -> list[tuple[str, str]]:
     rows = [
         ("الطيارة", cfg.craft_name),
-        ("الفيرموير", f"{cfg.firmware} {cfg.version}" if cfg.version else None),
-        ("البورد", cfg.board or cfg.mcu),
-        ("البروتوكول", cfg.get("motor_pwm_protocol")),
-        ("نوع الريتس", cfg.get("rates_type")),
+        ("الـFirmware", f"{cfg.firmware} {cfg.version}" if cfg.version else None),
+        ("الـBoard", cfg.board or cfg.mcu),
+        ("الـProtocol", cfg.get("motor_pwm_protocol")),
+        ("نوع الـRates", cfg.get("rates_type")),
         ("إعدادات متغيرة", str(cfg.changed_count)),
     ]
     return [(k, v) for k, v in rows if v]
