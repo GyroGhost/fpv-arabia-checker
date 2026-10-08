@@ -14,6 +14,7 @@ try:
     from noise import analyze_noise, explain
 except ImportError:  # المكتبات مو مثبتة
     analyze_noise = None
+import render_tool
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -109,7 +110,9 @@ async def on_message(msg: discord.Message):
             await msg.reply(f"ما لقيت إعدادات في ملف الـBlackbox هذا 🤔\n\n{HOW_TO}", mention_author=False)
             return
         await send_report(msg, cfg)
-        await send_noise(msg, await bbl.read(), cfg)
+        data = await bbl.read()
+        res = await send_noise(msg, data, cfg)
+        await send_render(msg, data, res.log_index if res else 1)
         return
 
     text = await extract_text(msg)
@@ -167,6 +170,33 @@ async def send_noise(msg: discord.Message, data: bytes, cfg):
         files.append(discord.File(io.BytesIO(res.heat_png), filename="heat.png"))
     await msg.reply(embeds=embeds, files=files, mention_author=False)
     print(f"[ok] noise sent, peaks={[(a, round(h)) for a, h, _ in res.peaks]}")
+    return res
+
+
+async def send_render(msg: discord.Message, data: bytes, flight_index: int):
+    """رسومات أداة BlackBox_CSV_Render."""
+    if not render_tool.available():
+        print(f"[skip] BlackBox_CSV_Render not found at {render_tool.BIN}")
+        return
+    async with msg.channel.typing():
+        tmp, plots, err = await asyncio.to_thread(render_tool.render, data, flight_index)
+    try:
+        if err or not plots:
+            print(f"[error] render: {err or 'no plots'}")
+            return
+        embeds, files = [], []
+        for i, (title, desc, path) in enumerate(plots):
+            name = f"bbr{i}.png"
+            e = discord.Embed(title=f"🛠️ {title}", description=desc, color=0x3987E5)
+            e.set_image(url=f"attachment://{name}")
+            embeds.append(e)
+            files.append(discord.File(str(path), filename=name))
+        embeds[-1].set_footer(text=f"الطلعة رقم {flight_index} • BlackBox_CSV_Render by nerdCopter • AGPL-3.0")
+        await msg.reply(content=f"**تحليل متقدم من أداة BlackBox_CSV_Render**\n<{render_tool.SOURCE_URL}>",
+                        embeds=embeds, files=files, mention_author=False)
+        print(f"[ok] render sent, {len(plots)} plots")
+    finally:
+        render_tool.cleanup(tmp)
 
 
 async def send_report(msg: discord.Message, cfg):
