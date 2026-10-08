@@ -1,0 +1,40 @@
+# diff all
+
+# version
+# Betaflight / STM32F7X2 (S7X2) 4.3.2 Jan 10 2023 / 12:00:00 (abc1234) MSP API: 1.44
+
+# start the command batch
+batch start
+
+board_name SPEEDYBEEF7V3
+manufacturer_id SPBE
+
+# name: GyroGhost 5inch
+name GyroGhost 5inch
+
+# feature
+feature GPS
+
+# aux
+aux 0 0 0 1700 2100 0 0
+aux 1 1 1 1300 1700 0 0
+
+# master
+set motor_pwm_protocol = DSHOT600
+set motor_poles = 12
+set small_angle = 180
+set vbat_min_cell_voltage = 310
+
+profile 0
+
+# profile 0
+set p_pitch = 50
+
+rateprofile 0
+
+# rateprofile 0
+set rates_type = ACTUAL
+set roll_rc_rate = 7
+
+# end the command batch
+batch end
