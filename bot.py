@@ -5,7 +5,7 @@ import discord
 from dotenv import load_dotenv
 
 from cli_parser import parse
-from report import BAD, OK, TIP, WARN, sections, summary_lines, worst_level
+from report import BAD, OK, TIP, WARN, sections, summary_pairs, worst_level
 from rules import analyze
 
 load_dotenv()
@@ -42,9 +42,10 @@ async def extract_text(msg: discord.Message) -> str | None:
 def build_embed(cfg, findings) -> discord.Embed:
     embed = discord.Embed(
         title="🔍 فحص إعدادات الطيارة",
-        description="\n".join(summary_lines(cfg)),
         color=COLORS[worst_level(findings)],
     )
+    for label, value in summary_pairs(cfg):
+        embed.add_field(name=label, value=f"`{value}`", inline=True)
     for name, text in sections(findings):
         embed.add_field(name=name, value=text, inline=False)
     embed.set_footer(text="FPV Arabia • فحص تلقائي، راجع أي شي قبل لا تطير")
@@ -53,18 +54,23 @@ def build_embed(cfg, findings) -> discord.Embed:
 
 @client.event
 async def on_ready():
-    print(f"البوت شغال باسم {client.user}")
+    print(f"Bot online as {client.user} in {len(client.guilds)} server(s): "
+          f"{[g.name for g in client.guilds]}")
 
 
 @client.event
 async def on_message(msg: discord.Message):
     if msg.author.bot:
         return
+    print(f"[msg] channel={msg.channel} attachments={[a.filename for a in msg.attachments]} "
+          f"content_len={len(msg.content)}")
     if CHANNEL_ID and msg.channel.id != CHANNEL_ID:
+        print("[skip] not the check channel")
         return
 
     text = await extract_text(msg)
     if not text:
+        print("[skip] no CLI text found")
         return
 
     cfg = parse(text)
@@ -73,7 +79,13 @@ async def on_message(msg: discord.Message):
                         mention_author=False)
         return
 
-    await msg.reply(embed=build_embed(cfg, analyze(cfg)), mention_author=False)
+    try:
+        await msg.reply(embed=build_embed(cfg, analyze(cfg)), mention_author=False)
+        print("[ok] report sent")
+    except discord.Forbidden:
+        print("[error] missing permission to reply / embed in this channel")
+    except Exception as e:
+        print(f"[error] {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":

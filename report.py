@@ -6,7 +6,7 @@ ICONS = {OK: "✅", TIP: "💡", WARN: "⚠️", BAD: "❌"}
 SECTIONS = [(BAD, "مشاكل لازم تنحل"), (WARN, "تنبيهات"), (TIP, "نصائح"), (OK, "سليم")]
 
 
-def summary_lines(cfg: Config) -> list[str]:
+def summary_pairs(cfg: Config) -> list[tuple[str, str]]:
     rows = [
         ("الطيارة", cfg.craft_name),
         ("الفيرموير", f"{cfg.firmware} {cfg.version}" if cfg.version else None),
@@ -15,14 +15,21 @@ def summary_lines(cfg: Config) -> list[str]:
         ("نوع الريتس", cfg.get("rates_type")),
         ("إعدادات متغيرة", str(cfg.changed_count)),
     ]
-    return [f"**{k}:** {v}" for k, v in rows if v]
+    return [(k, v) for k, v in rows if v]
+
+
+def summary_lines(cfg: Config) -> list[str]:
+    return [f"**{k}:**\n`{v}`" for k, v in summary_pairs(cfg)]
 
 
 def sections(findings: list[Finding]) -> list[tuple[str, str]]:
     """يرجع [(عنوان القسم، النص)] مع احترام حد ديسكورد 1024 حرف للحقل."""
     out = []
     for level, name in SECTIONS:
-        items = [f"{ICONS[level]} **{f.title}**\n{f.detail}" for f in findings if f.level == level]
+        items = [
+            f"{ICONS[level]} **{f.title}**\n{f.detail}" + (f"\n```\n{f.code}\n```" if f.code else "")
+            for f in findings if f.level == level
+        ]
         if items:
             text = "\n\n".join(items)
             if len(text) > 1020:
