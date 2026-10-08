@@ -45,6 +45,8 @@ class NoiseResult:
     reduction_db: float | None = None                 # قد إيش الفلاتر شالت من الـNoise
     png: bytes = b""
     heat_png: bytes = b""
+    filter_lines: list = field(default_factory=list)   # الخطوط اللي انرسمت
+    filter_hidden: list = field(default_factory=list)  # فلاتر أعلى من مدى الرسمة
     flights_used: int = 0
 
 
@@ -189,8 +191,9 @@ def analyze_noise(data: bytes) -> NoiseResult | None:
     return res
 
 
-def _filter_lines(ax, headers, fmax):
+def _filter_lines(ax, headers, fmax, res=None):
     """خطوط الـGyro Filters مثل الـBlackbox Explorer."""
+    drawn, hidden = [], []
     def ints(key):
         v = headers.get(key, "")
         try:
@@ -206,17 +209,38 @@ def _filter_lines(ax, headers, fmax):
         x = thr / 100
         curve = x * (1 - expo) + x ** 3 * expo  # تقريب لمنحنى الـexpo
         hz = dyn[0] + (dyn[1] - dyn[0]) * curve
-        ax.plot(hz, thr, color=FILTER_LINE, lw=1.4)
-        ax.text(dyn[0] + 4, 4, f"LPF1 dyn {dyn[0]}-{dyn[1]}Hz", color=FILTER_LINE, fontsize=8)
+        name = f"LPF1 dyn {dyn[0]}-{dyn[1]}Hz"
+        if dyn[0] < fmax:
+            ax.plot(hz, thr, color=FILTER_LINE, lw=2.2)
+            ax.text(dyn[0] + 4, 4, name, color=FILTER_LINE, fontsize=9, fontweight="bold")
+            drawn.append(name)
+        else:
+            hidden.append(name)
     else:
         st = (ints("gyro_lpf1_static_hz") or [0])[0]
-        if 0 < st < fmax:
-            ax.axvline(st, color=FILTER_LINE, lw=1.4)
-            ax.text(st + 4, 96, f"LPF1 {st}Hz", color=FILTER_LINE, fontsize=8, va="top")
+        if st > 0:
+            name = f"LPF1 {st}Hz"
+            if st < fmax:
+                ax.axvline(st, color=FILTER_LINE, lw=2.2)
+                ax.text(st + 4, 96, name, color=FILTER_LINE, fontsize=9, va="top", fontweight="bold")
+                drawn.append(name)
+            else:
+                hidden.append(name)
     st2 = (ints("gyro_lpf2_static_hz") or [0])[0]
-    if 0 < st2 < fmax:
-        ax.axvline(st2, color=FILTER_LINE, lw=1.4)
-        ax.text(st2 - 4, 96, f"LPF2 {st2}Hz", color=FILTER_LINE, fontsize=8, va="top", ha="right")
+    if st2 > 0:
+        name = f"LPF2 {st2}Hz"
+        if st2 < fmax:
+            ax.axvline(st2, color=FILTER_LINE, lw=2.2)
+            ax.text(st2 - 4, 96, name, color=FILTER_LINE, fontsize=9, va="top", ha="right",
+                    fontweight="bold")
+            drawn.append(name)
+        else:
+            hidden.append(name)
+    if hidden:
+        ax.text(fmax * 0.98, 50, "→ " + ", ".join(hidden), color=FILTER_LINE, fontsize=9,
+                ha="right", fontweight="bold")
+    if res is not None:
+        res.filter_lines, res.filter_hidden = drawn, hidden
 
 
 def _heatmap(res: NoiseResult, logs, headers, nfft: int = 128, step: int = 16):
@@ -275,7 +299,7 @@ def _heatmap(res: NoiseResult, logs, headers, nfft: int = 128, step: int = 16):
         ax.set_facecolor("#000000")
         ax.imshow(imgs[key], origin="lower", aspect="auto", cmap=HEAT, vmin=vmin, vmax=vmax,
                   extent=(0, fs / 2, 0, 100), interpolation="bilinear")
-        _filter_lines(ax, headers, fs / 2)
+        _filter_lines(ax, headers, fs / 2, res)
         ax.set_xlim(0, fs / 2)
         ax.set_ylim(0, 100)
         ax.set_title(title, color=TEXT, fontsize=11, loc="left")

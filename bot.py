@@ -149,13 +149,19 @@ async def send_noise(msg: discord.Message, data: bytes, cfg):
     embeds = [embed]
     files = [discord.File(io.BytesIO(res.png), filename="noise.png")]
     if res.heat_png:
-        heat = discord.Embed(
-            title="🔥 الـNoise مقابل الـThrottle",
-            description=(f"من كل الطلعات اللي في الملف ({res.flights_used}).\n"
-                         "الأسود هدوء، والأحمر Noise، والأبيض أقوى Noise.\n"
-                         "الخط الأخضر حد الـGyro Filter، وأي Noise على يمينه ينقص بقوة.\n"
-                         "إذا شفت خط أبيض مايل يطلع مع الـThrottle، هذا Noise الـMotors."),
-            color=0xE00000)
+        desc = (f"من كل الطلعات اللي في الملف ({res.flights_used}).\n"
+                "الأسود هدوء، والأحمر Noise، والأبيض أقوى Noise.\n"
+                "إذا شفت خط أبيض مايل يطلع مع الـThrottle، هذا Noise الـMotors.")
+        if res.filter_lines:
+            desc += "\n\nالخط الأخضر حد الـGyro Filter، وأي Noise على يمينه ينقص بقوة:\n" + \
+                    "\n".join(f"`{n}`" for n in res.filter_lines)
+        if res.filter_hidden:
+            max_hz = int(res.sample_rate / 2)
+            desc += ("\n\nفيه Filter أعلى من مدى الرسمة، لأن الـBlackbox مسجل بسرعة منخفضة "
+                     f"والرسمة توقف عند {max_hz}Hz:\n" + "\n".join(f"`{n}`" for n in res.filter_hidden))
+        if not res.filter_lines and not res.filter_hidden:
+            desc += "\n\nما لقيت أي Gyro Lowpass Filter مفعّل في إعداداتك."
+        heat = discord.Embed(title="🔥 الـNoise مقابل الـThrottle", description=desc, color=0xE00000)
         heat.set_image(url="attachment://heat.png")
         embeds.append(heat)
         files.append(discord.File(io.BytesIO(res.heat_png), filename="heat.png"))
