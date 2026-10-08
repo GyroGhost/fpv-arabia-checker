@@ -175,6 +175,8 @@ async def send_noise(msg: discord.Message, data: bytes, cfg):
 
 async def send_render(msg: discord.Message, data: bytes, flight_index: int):
     """رسومات أداة BlackBox_CSV_Render."""
+    if not render_tool.ENABLED:
+        return
     if not render_tool.available():
         print(f"[skip] BlackBox_CSV_Render not found at {render_tool.BIN}")
         return

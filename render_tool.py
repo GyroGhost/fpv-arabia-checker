@@ -34,8 +34,12 @@ PLOTS = [
 ]
 
 
+# مطفية افتراضياً إلى ما يوافق صاحب الأداة. للتفعيل: ENABLE_RENDER=1 في ملف .env
+ENABLED = os.getenv("ENABLE_RENDER", "0") == "1"
+
+
 def available() -> bool:
-    return BIN.is_file()
+    return ENABLED and BIN.is_file()
 
 
 def _split_flight(data: bytes, index: int) -> bytes:
