@@ -1,4 +1,6 @@
 """بوت FPV Arabia لفحص ملفات Betaflight CLI."""
+import asyncio
+import io
 import os
 
 import discord
@@ -7,6 +9,11 @@ from dotenv import load_dotenv
 from cli_parser import parse, parse_blackbox
 from report import BAD, OK, TIP, WARN, sections, summary_pairs, worst_level
 from rules import analyze
+
+try:
+    from noise import analyze_noise, explain
+except ImportError:  # المكتبات مو مثبتة
+    analyze_noise = None
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -102,6 +109,7 @@ async def on_message(msg: discord.Message):
             await msg.reply(f"ما لقيت إعدادات في ملف الـBlackbox هذا 🤔\n\n{HOW_TO}", mention_author=False)
             return
         await send_report(msg, cfg)
+        await send_noise(msg, await bbl.read(), cfg)
         return
 
     text = await extract_text(msg)
@@ -117,6 +125,30 @@ async def on_message(msg: discord.Message):
         return
 
     await send_report(msg, cfg)
+
+
+async def send_noise(msg: discord.Message, data: bytes, cfg):
+    if analyze_noise is None:
+        print("[skip] noise libs missing: pip install -r requirements.txt")
+        return
+    async with msg.channel.typing():
+        try:
+            res = await asyncio.to_thread(analyze_noise, data)
+        except Exception as e:
+            print(f"[error] noise {type(e).__name__}: {e}")
+            return
+    if not res:
+        await msg.reply("الطلعات في الملف قصيرة بزيادة، ما أقدر أحلل الـNoise منها 🤏", mention_author=False)
+        return
+    bidir = cfg.get("dshot_bidir")
+    embed = discord.Embed(title="📈 تحليل الـNoise", color=0xD95926 if res.peaks else 0x2ECC71)
+    for name, text in explain(res, None if bidir is None else bidir == "ON"):
+        embed.add_field(name=name, value=text, inline=False)
+    embed.set_image(url="attachment://noise.png")
+    embed.set_footer(text="البرتقالي قبل الـFilters • الأزرق بعدها")
+    await msg.reply(embed=embed, file=discord.File(io.BytesIO(res.png), filename="noise.png"),
+                    mention_author=False)
+    print(f"[ok] noise sent, peaks={[(a, round(h)) for a, h, _ in res.peaks]}")
 
 
 async def send_report(msg: discord.Message, cfg):
