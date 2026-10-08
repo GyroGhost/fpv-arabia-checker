@@ -39,6 +39,29 @@ async def extract_text(msg: discord.Message) -> str | None:
     return None
 
 
+HOW_TO = (
+    "**الطريقة الصحيحة:**\n"
+    "١. افتح الـBetaflight Configurator وروح لتبويب الـCLI\n"
+    "٢. اكتب هذا الأمر واضغط Enter:\n"
+    "```\ndiff all\n```\n"
+    "٣. اضغط Save to File وارفع الملف هنا"
+)
+
+
+def wrong_file_message(filename: str) -> str:
+    name = filename.lower()
+    if name.endswith((".bbl", ".bfl")):
+        head = ("هذا ملف Blackbox 📈 فيه تسجيل الطيران، وأنا أقرأ ملف الإعدادات بس.\n"
+                "لتحليل الـBlackbox استخدم الـBlackbox Explorer.")
+    elif name.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        head = "هذي صورة 🖼️ ما أقدر أقرأ الإعدادات منها، أحتاج الملف النصي."
+    elif name.endswith((".txt", ".log", ".cli")):
+        head = "الملف كبير بزيادة أو مو ملف إعدادات 🤔"
+    else:
+        head = "ما أعرف أقرأ هذا النوع من الملفات 🤔"
+    return f"{head}\n\n{HOW_TO}"
+
+
 def build_embed(cfg, findings) -> discord.Embed:
     embed = discord.Embed(
         title="🔍 فحص إعدادات الطيارة",
@@ -71,12 +94,13 @@ async def on_message(msg: discord.Message):
     text = await extract_text(msg)
     if not text:
         print("[skip] no CLI text found")
+        if CHANNEL_ID and msg.attachments:
+            await msg.reply(wrong_file_message(msg.attachments[0].filename), mention_author=False)
         return
 
     cfg = parse(text)
     if not cfg.looks_valid():
-        await msg.reply("ما قدرت أقرأ الملف 🤔 اكتب `diff all` في CLI وارفع النتيجة كملف .txt",
-                        mention_author=False)
+        await msg.reply(f"ما قدرت أقرأ الإعدادات من هذا الملف 🤔\n\n{HOW_TO}", mention_author=False)
         return
 
     try:
