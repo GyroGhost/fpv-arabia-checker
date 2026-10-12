@@ -6,10 +6,10 @@ A Discord bot for the Arabic FPV community *FPV Arabia*. Members upload a Betafl
 
 ---
 
-## وش يسوي
+## ماذا يفعل ؟ : 
 
 **ملف الإعدادات** (من الـCLI بأمر `diff all`):
-- ملخص الطيارة: الـFirmware والـBoard والـProtocol والـRates
+- ملخص الطيران : الـFirmware والـBoard والـProtocol والـRates
 - فحص الإعدادات: سويتش الـARM، الـRPM Filter، الـFailsafe، حد البطارية، وغيرها
 - كل تنبيه معه الأمر الجاهز للنسخ
 
@@ -88,5 +88,5 @@ Blackbox log parser, bundled in `orangebox/`. Licensed under GPL-3.0.
 
 ## الرخصة · License
 
-البوت مجاني بالكامل، بدون أرباح ولا ميزات مدفوعة.
+البوت مجاني بالكامل، بدون أرباح ولا مميزات مدفوعة.
 This bot is free and non-commercial. Licensed under **GPL-3.0**, see `LICENSE`.
