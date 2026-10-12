@@ -21,6 +21,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHECK_CHANNEL_ID", "0"))  # 0 = كل القنوات
 MAX_BYTES = 200_000
 MAX_BBL_BYTES = 25_000_000
+MAX_FILES = 3  # أقصى عدد ملفات Blackbox نحللها من رسالة وحدة
 COLORS = {OK: 0x2ECC71, TIP: 0x3498DB, WARN: 0xF1C40F, BAD: 0xE74C3C}
 # تحليل ملف واحد بالدور: مكتبة الرسم ما تتحمل رسمتين بنفس اللحظة، والسيرفر ذاكرته محدودة
 ANALYSIS_LOCK = asyncio.Lock()
@@ -104,17 +105,20 @@ async def on_message(msg: discord.Message):
         print("[skip] not the check channel")
         return
 
-    bbl = next((a for a in msg.attachments
-                if a.filename.lower().endswith((".bbl", ".bfl")) and a.size <= MAX_BBL_BYTES), None)
-    if bbl:
-        data = await bbl.read()
-        cfg = parse_blackbox(data)
-        if not cfg.looks_valid():
-            await msg.reply(f"ما لقيت إعدادات في ملف الـBlackbox هذا 🤔\n\n{HOW_TO}", mention_author=False)
-            return
-        await send_report(msg, cfg)
-        res = await send_noise(msg, data, cfg)
-        await send_render(msg, data, res.log_index if res else 1)
+    bbls = [a for a in msg.attachments
+            if a.filename.lower().endswith((".bbl", ".bfl")) and a.size <= MAX_BBL_BYTES][:MAX_FILES]
+    if bbls:
+        for i, bbl in enumerate(bbls, 1):
+            if len(bbls) > 1:
+                await msg.reply(f"📂 **الملف {i} من {len(bbls)}:** `{bbl.filename}`", mention_author=False)
+            data = await bbl.read()
+            cfg = parse_blackbox(data)
+            if not cfg.looks_valid():
+                await msg.reply(f"ما لقيت إعدادات في `{bbl.filename}` 🤔\n\n{HOW_TO}", mention_author=False)
+                continue
+            await send_report(msg, cfg)
+            res = await send_noise(msg, data, cfg)
+            await send_render(msg, data, res.log_index if res else 1)
         return
 
     text = await extract_text(msg)
