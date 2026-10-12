@@ -1,92 +1,94 @@
 # FPV Arabia Checker 🔍
 
-بوت ديسكورد لمجتمع **FPV Arabia** يقرأ ملفات الإعدادات وملفات الـBlackbox من Betaflight، ويرد بتقرير وشرح بالعربي.
-
-A Discord bot for the Arabic FPV community *FPV Arabia*. Members upload a Betaflight `diff all` or a Blackbox log and get a settings check and noise analysis explained in Arabic.
+A Discord bot for **FPV Arabia**, the Arabic-speaking FPV community. Members upload a Betaflight settings dump or a Blackbox log, and the bot replies with a settings check, noise analysis and recommendations, explained in Arabic.
 
 ---
 
-## ماذا يفعل ؟ : 
+## Features
 
-**ملف الإعدادات** (من الـCLI بأمر `diff all`):
-- ملخص الطيران : الـFirmware والـBoard والـProtocol والـRates
-- فحص الإعدادات: سويتش الـARM، الـRPM Filter، الـFailsafe، حد البطارية، وغيرها
-- كل تنبيه معه الأمر الجاهز للنسخ
+**Settings file** (Betaflight CLI `diff all`)
+- Quad summary: firmware, board, motor protocol, rates type
+- Settings checks: ARM switch, RPM filter, failsafe, battery limits and more
+- Every warning comes with a ready-to-paste CLI command
 
-**ملف الـBlackbox** (`.BBL` / `.BFL`):
-- نفس فحص الإعدادات من معلومات الملف
-- رسمة الـNoise Spectrum قبل الـFilters وبعدها، مع القمم المكتشفة
-- خريطة الـNoise مقابل الـThrottle من كل الطلعات، مع خطوط الـGyro Filters
-- تحليل متقدم من أداة BlackBox_CSV_Render (اختياري)
+**Blackbox log** (`.BBL` / `.BFL`, up to 3 files per message)
+- The same settings checks, read from the log headers
+- Gyro noise spectrum before and after filtering, with detected peaks
+- Noise vs throttle heatmap from all flights in the file, with gyro filter cutoffs
+- Advanced plots from BlackBox_CSV_Render (optional)
+
+**Final recommendations**
+- One summary at the end of every analysis, ordered by priority, with CLI commands
+
+Analyses run one at a time, so simultaneous uploads never mix up their plots.
 
 ---
 
-## الملفات
+## Project layout
 
-| الملف | وظيفته |
+| File | Purpose |
 |---|---|
-| `bot.py` | البوت نفسه |
-| `cli_parser.py` | قراءة ملف `diff all` ومعلومات ملف الـBlackbox |
-| `rules.py` | قواعد الفحص |
-| `report.py` | ترتيب التقرير |
-| `noise.py` | تحليل ورسم الـNoise |
-| `render_tool.py` | الربط مع BlackBox_CSV_Render |
-| `orangebox/` | مكتبة فك ملفات الـBlackbox (انظر الشكر تحت) |
-| `test_local.py` | تجربة الفحص بدون ديسكورد |
+| `bot.py` | The Discord bot |
+| `cli_parser.py` | Parses `diff all` dumps and Blackbox log headers |
+| `rules.py` | Settings checks |
+| `report.py` | Formats the settings report |
+| `noise.py` | Noise spectrum and heatmap |
+| `recommend.py` | Final recommendations |
+| `render_tool.py` | BlackBox_CSV_Render integration |
+| `orangebox/` | Bundled Blackbox log parser (see Credits) |
+| `test_local.py` | Run the checks without Discord |
 
 ---
 
-## التشغيل على جهازك
+## Running locally
 
 ```
 pip install -r requirements.txt
 ```
-انسخ `.env.example` إلى `.env` وعبّي القيم، بعدها:
+Copy `.env.example` to `.env`, fill in the values, then:
 ```
 python bot.py
 ```
 
-| المتغير | الوصف |
+| Variable | Description |
 |---|---|
-| `DISCORD_TOKEN` | توكن البوت من Discord Developer Portal |
-| `CHECK_CHANNEL_ID` | رقم قناة الفحص، و`0` يعني كل القنوات |
-| `ENABLE_RENDER` | `1` لتفعيل BlackBox_CSV_Render |
-| `RENDER_BIN` | مسار الأداة إذا مو في المكان الافتراضي |
+| `DISCORD_TOKEN` | Bot token from the Discord Developer Portal |
+| `CHECK_CHANNEL_ID` | Channel the bot answers in (`0` = all channels) |
+| `ENABLE_RENDER` | `1` to enable BlackBox_CSV_Render plots |
+| `RENDER_BIN` | Path to the BlackBox_CSV_Render binary, if not in the default location |
 
-لتجربة الفحص بدون ديسكورد:
+To test the checks without Discord:
 ```
 python test_local.py sample_diff.txt
 ```
 
-## الاستضافة
+## Hosting
 
-البوت مستضاف على Railway. ملف `Dockerfile` يبني أداة BlackBox_CSV_Render من الكود ويجهز البوت، وكل تحديث على فرع `main` يتنشر تلقائياً.
+The bot runs on Railway. The `Dockerfile` builds BlackBox_CSV_Render from source (pinned to a specific commit) and packages the bot. Every push to `main` is deployed automatically.
 
-## إضافة قاعدة فحص جديدة
+## Adding a check
 
 ```python
 def rule_my_check(cfg):
     if cfg.get("some_setting") == "X":
-        return Finding(WARN, "العنوان", "الشرح", "set some_setting = Y")
+        return Finding(WARN, "Title", "Explanation", "set some_setting = Y")
     return None
 ```
-بعدها أضفها لقائمة `RULES` في آخر `rules.py`.
+Then add it to the `RULES` list at the end of `rules.py`.
 
 ---
 
-## شكر وتقدير · Credits
+## Credits
 
 **[BlackBox_CSV_Render](https://github.com/nerdCopter/BlackBox_CSV_Render)** by **nerdCopter**
-التحليل المتقدم في البوت من هالأداة، ونستخدمها بإذن صاحبها. البوت يشغّلها بدون أي تعديل، ويذكرها مع رابطها في كل تقرير.
-The advanced analysis plots come from BlackBox_CSV_Render, used unmodified and with the author's permission. Licensed under AGPL-3.0. Thank you nerdCopter!
+The advanced analysis plots come from BlackBox_CSV_Render, used unmodified and with the author's permission. Every report that includes its plots credits the tool and links to its repository. Licensed under AGPL-3.0. Thank you, nerdCopter!
 
 **[orangebox](https://github.com/atomgomba/orangebox)** by **Károly Kiripolszky**
-مكتبة فك ملفات الـBlackbox، ونسختها موجودة داخل المشروع في مجلد `orangebox/`.
 Blackbox log parser, bundled in `orangebox/`. Licensed under GPL-3.0.
 
 ---
 
-## الرخصة · License
+## License
 
-البوت مجاني بالكامل، بدون أرباح ولا مميزات مدفوعة.
-This bot is free and non-commercial. Licensed under **GPL-3.0**, see `LICENSE`.
+This bot is free and non-commercial: no profit and no paid features.
+Licensed under **GPL-3.0**, see `LICENSE`.
