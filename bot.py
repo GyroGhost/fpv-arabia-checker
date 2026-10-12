@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from cli_parser import parse, parse_blackbox
 from report import BAD, OK, TIP, WARN, sections, summary_pairs, worst_level
 from rules import analyze
+import recommend
 
 try:
     from noise import analyze_noise, explain
@@ -119,6 +120,7 @@ async def on_message(msg: discord.Message):
             await send_report(msg, cfg)
             res = await send_noise(msg, data, cfg)
             await send_render(msg, data, res.log_index if res else 1)
+            await send_recommendations(msg, cfg, res)
         return
 
     text = await extract_text(msg)
@@ -134,6 +136,24 @@ async def on_message(msg: discord.Message):
         return
 
     await send_report(msg, cfg)
+    await send_recommendations(msg, cfg, None)
+
+
+async def send_recommendations(msg: discord.Message, cfg, noise_res):
+    """رسالة أخيرة تجمع كل التوصيات مرتبة من الأهم."""
+    try:
+        items = recommend.build(analyze(cfg), noise_res)
+        embed = discord.Embed(title="📋 التوصيات النهائية", description=recommend.summary_line(items),
+                              color=0x2ECC71 if not items else 0xF1C40F)
+        for num, title, detail, code in items:
+            value = detail + (f"\n```\n{code}\n```" if code else "")
+            embed.add_field(name=f"{num} {title}", value=value[:1024], inline=False)
+        if items:
+            embed.set_footer(text="بعد أي تعديل في الـCLI لا تنسى save • جرّب طلعة وارفع ملف جديد للمقارنة")
+        await msg.reply(embed=embed, mention_author=False)
+        print(f"[ok] recommendations sent, {len(items)} items")
+    except Exception as e:
+        print(f"[error] recommendations {type(e).__name__}: {e}")
 
 
 async def send_noise(msg: discord.Message, data: bytes, cfg):
