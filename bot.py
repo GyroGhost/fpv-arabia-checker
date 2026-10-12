@@ -22,6 +22,8 @@ CHANNEL_ID = int(os.getenv("CHECK_CHANNEL_ID", "0"))  # 0 = كل القنوات
 MAX_BYTES = 200_000
 MAX_BBL_BYTES = 25_000_000
 COLORS = {OK: 0x2ECC71, TIP: 0x3498DB, WARN: 0xF1C40F, BAD: 0xE74C3C}
+# تحليل ملف واحد بالدور: مكتبة الرسم ما تتحمل رسمتين بنفس اللحظة، والسيرفر ذاكرته محدودة
+ANALYSIS_LOCK = asyncio.Lock()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -105,12 +107,12 @@ async def on_message(msg: discord.Message):
     bbl = next((a for a in msg.attachments
                 if a.filename.lower().endswith((".bbl", ".bfl")) and a.size <= MAX_BBL_BYTES), None)
     if bbl:
-        cfg = parse_blackbox(await bbl.read())
+        data = await bbl.read()
+        cfg = parse_blackbox(data)
         if not cfg.looks_valid():
             await msg.reply(f"ما لقيت إعدادات في ملف الـBlackbox هذا 🤔\n\n{HOW_TO}", mention_author=False)
             return
         await send_report(msg, cfg)
-        data = await bbl.read()
         res = await send_noise(msg, data, cfg)
         await send_render(msg, data, res.log_index if res else 1)
         return
@@ -134,7 +136,7 @@ async def send_noise(msg: discord.Message, data: bytes, cfg):
     if analyze_noise is None:
         print("[skip] noise libs missing: pip install -r requirements.txt")
         return
-    async with msg.channel.typing():
+    async with ANALYSIS_LOCK, msg.channel.typing():
         try:
             res = await asyncio.to_thread(analyze_noise, data)
         except Exception as e:
@@ -180,7 +182,7 @@ async def send_render(msg: discord.Message, data: bytes, flight_index: int):
     if not render_tool.available():
         print(f"[skip] BlackBox_CSV_Render not found at {render_tool.BIN}")
         return
-    async with msg.channel.typing():
+    async with ANALYSIS_LOCK, msg.channel.typing():
         tmp, plots, err = await asyncio.to_thread(render_tool.render, data, flight_index)
     try:
         if err or not plots:
